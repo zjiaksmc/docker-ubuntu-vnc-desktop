@@ -82,7 +82,7 @@ RUN sed -i 's#http://archive.ubuntu.com/ubuntu/#mirror://mirrors.ubuntu.com/mirr
 
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates gnupg patch
+    && apt-get install -y --no-install-recommends curl ca-certificates gnupg patch vim git ssh
 
 # nodejs
 RUN curl -sL https://deb.nodesource.com/setup_8.x | bash - \
@@ -107,15 +107,57 @@ RUN cd /src/web \
 ################################################################################
 FROM system
 LABEL maintainer="fcwu.tw@gmail.com"
+ARG NB_USER="jovyan"
+ARG NB_UID="1000"
+ARG NB_GID="100"
+
+RUN apt-get update && apt-get install -y --no-install-recommends vim git ssh
 
 COPY --from=builder /src/web/dist/ /usr/local/lib/web/frontend/
 COPY rootfs /
 RUN ln -sf /usr/local/lib/web/frontend/static/websockify /usr/local/lib/web/frontend/static/novnc/utils/websockify && \
 	chmod +x /usr/local/lib/web/frontend/static/websockify/run
 
+## Make directories writable to root group
+# Add a script that we will use to correct permissions after running certain commands
+ADD fix-permissions /usr/local/bin/fix-permissions
+
+# Configure environment
+ENV NB_USER=$NB_USER \
+    NB_UID=$NB_UID \
+    NB_GID=$NB_GID
+ENV USER=root \
+    GROUP=root \
+    PASSWORD=password
+ENV PATH=/:$PATH \
+    HOME=/root
+
+# home folder
+RUN mkdir -p $HOME/.config/pcmanfm/LXDE/ && \
+    ln -sf /usr/local/share/doro-lxde-wallpapers/desktop-items-0.conf $HOME/.config/pcmanfm/LXDE/ && \
+    chown -R $USER:$GROUP $HOME
+
+RUN echo "auth requisite pam_deny.so" >> /etc/pam.d/su && \
+    sed -i.bak -e 's/^%admin/#%admin/' /etc/sudoers && \
+    sed -i.bak -e 's/^%sudo/#%sudo/' /etc/sudoers && \
+    useradd -m -s /bin/bash -N -u $NB_UID $NB_USER && \
+    chown $NB_USER:$NB_GID $HOME && \
+    chmod g+w /etc/passwd && \
+    fix-permissions $HOME && \
+    fix-permissions /etc/supervisor && \ 
+    fix-permissions /etc/nginx && \ 
+    fix-permissions /var && \ 
+    fix-permissions /run && \
+    #fix-permissions /dev && \
+    fix-permissions /bin && \
+    fix-permissions /usr/local/bin
+
+
 EXPOSE 8888
-WORKDIR /root
-ENV HOME=/home/ubuntu \
-    SHELL=/bin/bash
+WORKDIR $HOME
+
 HEALTHCHECK --interval=30s --timeout=5s CMD curl --fail http://127.0.0.1:6079/api/health
-ENTRYPOINT ["/startup.sh"]
+
+# Configure container startup
+ENTRYPOINT ["tini", "-g", "--"]
+CMD ["startup"]
