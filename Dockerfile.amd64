@@ -134,15 +134,23 @@ ENV PATH=/:$PATH \
 
 # home folder
 RUN mkdir $HOME && \
+    mkdir -p $HOME/Desktop && \
     mkdir -p $HOME/.config/pcmanfm/LXDE/ && \
     ln -sf /usr/local/share/doro-lxde-wallpapers/desktop-items-0.conf $HOME/.config/pcmanfm/LXDE/
+
+COPY desktop-shortcut $HOME/Desktop
+COPY app-icons /etc/app-icons
 
 RUN echo "auth requisite pam_deny.so" >> /etc/pam.d/su && \
     sed -i.bak -e 's/^%admin/#%admin/' /etc/sudoers && \
     sed -i.bak -e 's/^%sudo/#%sudo/' /etc/sudoers && \
     useradd -m -s /bin/bash -N -u $NB_UID $NB_USER && \
+    groupadd -g $NB_GID -o ${NB_GROUP:-${NB_USER}} && \
+    usermod  -g $NB_GID -aG 100 $NB_USER && \
     chown -R $NB_USER:$NB_GID $HOME && \
     chmod g+w /etc/passwd && \
+    ## If grant NB_USER passwordless sudo access
+    # echo "$NB_USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/notebook && \
     fix-permissions $HOME && \
     fix-permissions /etc/supervisor && \ 
     fix-permissions /etc/nginx && \ 
